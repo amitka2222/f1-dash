@@ -5,8 +5,7 @@
  * from the API per visitor is impossible on a 500 req/hour shared quota, so we
  * pay the cost once at build time and ship the result as static files.
  *
- * The upstream base URL comes from the environment, never from the repo, so it
- * stays consistent with how the Worker hides it. Set HISTORY_API before running.
+ * Set HISTORY_API to the provider's base URL before running.
  */
 
 import { writeFile, mkdir } from 'node:fs/promises';
@@ -15,12 +14,11 @@ import { fileURLToPath } from 'node:url';
 
 const BASE = process.env.HISTORY_API;
 if (!BASE) {
-  console.error('HISTORY_API is not set. See .dev.vars.example.');
+  console.error('HISTORY_API is not set. See the README.');
   process.exit(1);
 }
 
-// Written into the assets directory so the files are served straight from the
-// edge at /data/*.json, with no Worker invocation at all.
+// Written into the published directory so the files ship as part of the site.
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'data');
 
 const FIRST_SEASON = 1950;
@@ -177,6 +175,27 @@ async function buildSeasonStandings() {
   return standings;
 }
 
+/**
+ * The current season's calendar, including which rounds carry a sprint.
+ *
+ * Baked in so the title calculator needs no network call at all: standings come
+ * from standings.json and the remaining rounds come from here.
+ */
+async function buildCalendar() {
+  console.log('Current season calendar...');
+  const data = await api(`${CURRENT_SEASON}`, { limit: 30 });
+
+  return (data.RaceTable?.Races ?? []).map((r) => ({
+    round: Number(r.round),
+    name: r.raceName,
+    date: r.date,
+    circuit: r.Circuit.circuitName,
+    locality: r.Circuit.Location.locality,
+    country: r.Circuit.Location.country,
+    sprint: Boolean(r.Sprint),
+  }));
+}
+
 async function buildWins() {
   console.log('Every race winner since 1950...');
   return apiAll('results/1', (d) =>
@@ -302,6 +321,7 @@ async function main() {
 
   const seasons = await buildChampions();
   const seasonStandings = await buildSeasonStandings();
+  const calendar = await buildCalendar();
   const wins = await buildWins();
   const reference = await buildReference();
   const summary = summarise({ seasons, wins, ...reference });
@@ -309,6 +329,7 @@ async function main() {
   const files = {
     'seasons.json': seasons,
     'standings.json': seasonStandings,
+    'calendar.json': calendar,
     'wins.json': wins,
     'drivers.json': summary.drivers,
     'constructors.json': summary.constructors,
@@ -317,6 +338,7 @@ async function main() {
       builtAt: new Date().toISOString(),
       firstSeason: FIRST_SEASON,
       latestSeason: seasons.at(-1)?.season ?? null,
+      latestRound: seasons.at(-1)?.rounds ?? null,
       counts: {
         seasons: seasons.length,
         races: wins.length,

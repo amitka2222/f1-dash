@@ -1,11 +1,21 @@
 /**
- * Data access. Every network call goes to our own origin — either the Worker
- * proxy under /api, or the pre-baked archive under /data. The client has no
- * idea which upstreams sit behind them.
+ * Data access for a fully static site.
+ *
+ * Three of the four views read pre-baked JSON from this origin and make no
+ * network calls to anyone. Only Race Replay talks to a live API, and it does so
+ * straight from the browser — both providers send `access-control-allow-origin:
+ * *`, so no proxy is needed.
+ *
+ * Calling direct also means each visitor spends their OWN rate-limit budget
+ * rather than drawing on one shared server-side pool, which is the failure mode
+ * that actually breaks a site like this under load.
  */
 
-// Requests are deduplicated per page-load. The Worker caches at the edge too,
-// but this stops a single view firing the same call from three components.
+// Timing data for the replay view. Public, unauthenticated, CORS-enabled.
+const LIVE_API = 'https://api.openf1.org/v1';
+
+// Requests are deduplicated per page-load so one view firing the same call from
+// several components only hits the network once.
 const inflight = new Map();
 
 async function getJSON(url) {
@@ -13,16 +23,14 @@ async function getJSON(url) {
 
   const promise = fetch(url)
     .then(async (res) => {
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new ApiError(detail.error ?? `request_failed`, res.status);
-      }
+      if (!res.ok) throw new ApiError('request_failed', res.status);
       return res.json();
     })
     .catch((err) => {
-      // Don't poison the cache with a failure — let the next attempt retry.
+      // Don't cache a failure — let the next attempt retry.
       inflight.delete(url);
-      throw err;
+      if (err instanceof ApiError) throw err;
+      throw new ApiError('network_error', 0);
     });
 
   inflight.set(url, promise);
@@ -37,100 +45,77 @@ export class ApiError extends Error {
   }
 
   get friendly() {
-    if (this.status === 429) return 'Hit the data provider’s rate limit. Try again shortly.';
-    if (this.status === 404) return 'No data has been recorded for that session yet.';
-    if (this.status === 502 || this.status === 503) {
-      return 'The data provider is unreachable right now.';
+    if (this.status === 429) {
+      return 'The timing provider is rate-limiting this browser. Wait a minute and try again.';
     }
+    if (this.status === 404) return 'No data has been recorded for that session yet.';
+    if (this.status === 0) return 'Could not reach the timing provider. Check your connection.';
     return 'Could not load that data.';
   }
 }
 
-/** Historical / standings data (Ergast-shaped). */
-export function history(path, params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return getJSON(`/api/h/${path}${qs ? `?${qs}` : ''}`).then((d) => d.MRData);
+/** A pre-baked archive file, e.g. archive('drivers'). */
+export function archive(name) {
+  return getJSON(`data/${name}.json`);
 }
 
-/** Session and telemetry data. */
+/** Live session and telemetry data. */
 export function live(endpoint, params = {}) {
   const qs = new URLSearchParams(params).toString();
-  return getJSON(`/api/l/${endpoint}${qs ? `?${qs}` : ''}`);
+  return getJSON(`${LIVE_API}/${endpoint}${qs ? `?${qs}` : ''}`);
 }
 
-/** Pre-baked archive file, e.g. archive('drivers'). */
-export function archive(name) {
-  return getJSON(`/data/${name}.json`);
-}
+/* --- shaped helpers ------------------------------------------------------- */
 
-/* --- shaped helpers ------------------------------------------------------ */
+/**
+ * Current-season driver standings, from the pre-baked archive.
+ *
+ * Standings only change after a race, and the archive rebuilds every Monday, so
+ * a static read is as fresh as a live call would be for all but the few hours
+ * right after a chequered flag.
+ */
+export async function driverStandings() {
+  // Prime the name index first: the rows below carry only driver ids.
+  const [bySeason, meta] = await Promise.all([
+    archive('standings'),
+    archive('meta'),
+    primeDrivers(),
+  ]);
 
-export async function driverStandings(season = 'current') {
-  const data = await history(`${season}/driverstandings`);
-  const list = data.StandingsTable?.StandingsLists?.[0];
-  if (!list) return { round: 0, season, rows: [] };
+  const season = meta.latestSeason;
+  const rows = bySeason[season] ?? [];
 
   return {
-    season: Number(list.season),
-    round: Number(list.round),
-    rows: list.DriverStandings.map((s) => ({
-      position: Number(s.position),
-      points: Number(s.points),
-      wins: Number(s.wins),
-      driverId: s.Driver.driverId,
-      code: s.Driver.code ?? s.Driver.familyName.slice(0, 3).toUpperCase(),
-      name: `${s.Driver.givenName} ${s.Driver.familyName}`,
-      surname: s.Driver.familyName,
-      nationality: s.Driver.nationality,
-      constructorId: s.Constructors.at(-1)?.constructorId ?? null,
-      constructor: s.Constructors.at(-1)?.name ?? '—',
-    })),
+    season,
+    round: meta.latestRound ?? 0,
+    builtAt: meta.builtAt,
+    rows: rows
+      .filter((r) => r.p != null)
+      .sort((a, b) => a.p - b.p)
+      .map((r) => ({
+        position: r.p,
+        points: r.pts,
+        wins: r.w,
+        driverId: r.d,
+        code: codeFor(r.d),
+        name: nameFor(r.d),
+        constructorId: r.ci,
+        constructor: r.c ?? '—',
+      })),
   };
 }
 
-export async function constructorStandings(season = 'current') {
-  const data = await history(`${season}/constructorstandings`);
-  const list = data.StandingsTable?.StandingsLists?.[0];
-  if (!list) return { round: 0, season, rows: [] };
-
-  return {
-    season: Number(list.season),
-    round: Number(list.round),
-    rows: list.ConstructorStandings.map((s) => ({
-      position: Number(s.position),
-      points: Number(s.points),
-      wins: Number(s.wins),
-      constructorId: s.Constructor.constructorId,
-      name: s.Constructor.name,
-      nationality: s.Constructor.nationality,
-    })),
-  };
-}
-
-export async function schedule(season = 'current') {
-  const data = await history(`${season}`);
-  return (data.RaceTable?.Races ?? []).map((r) => ({
-    season: Number(r.season),
-    round: Number(r.round),
-    name: r.raceName,
-    date: r.date,
-    time: r.time ?? null,
-    circuitId: r.Circuit.circuitId,
-    circuit: r.Circuit.circuitName,
-    locality: r.Circuit.Location.locality,
-    country: r.Circuit.Location.country,
-    // Sprint weekends carry an extra points-paying race, which the title
-    // calculator has to account for.
-    sprint: Boolean(r.Sprint),
-  }));
+/** Current-season calendar, from the pre-baked archive. */
+export async function schedule() {
+  return archive('calendar');
 }
 
 /**
  * Season-by-season standings history for one driver.
  *
- * Read from the pre-baked archive rather than the API: the upstream rejects
- * cross-season standings queries, so doing this live would cost one request per
- * season per driver — roughly 40 calls for a single comparison.
+ * The history provider rejects cross-season standings queries outright — every
+ * request must name a single season — so doing this live would cost one call
+ * per season per driver. The archive makes it a file lookup.
  */
 export async function driverSeasons(driverId) {
   const bySeason = await archive('standings');
@@ -141,7 +126,6 @@ export async function driverSeasons(driverId) {
       if (!row) return null;
       return {
         season: Number(season),
-        // null when the driver was not classified that year (e.g. excluded).
         position: row.p,
         positionText: row.pt ?? null,
         points: row.pts,
@@ -157,9 +141,9 @@ export async function driverSeasons(driverId) {
 /**
  * Race sessions for a year, newest first.
  *
- * Sessions that have not started yet are dropped: they exist in the calendar
- * but have no timing data behind them, so offering one only produces an error.
- * Note that `session_type: 'Race'` covers sprints too, hence the explicit flag.
+ * Sessions that have not started are dropped — they exist in the calendar but
+ * have no timing behind them, so offering one only produces an error. Note that
+ * `session_type: 'Race'` covers sprints too, hence the explicit flag.
  */
 export async function raceSessions(year) {
   const sessions = await live('sessions', { year, session_type: 'Race' });
@@ -169,4 +153,29 @@ export async function raceSessions(year) {
     .filter((s) => !s.is_cancelled && new Date(s.date_start).getTime() < now)
     .map((s) => ({ ...s, isSprint: s.session_name === 'Sprint' }))
     .sort((a, b) => new Date(b.date_start) - new Date(a.date_start));
+}
+
+/* --- driver name lookup --------------------------------------------------- */
+
+// Resolved lazily from the archive so standings rows can show real names and
+// codes without every caller having to join the two files itself.
+let driverIndex = null;
+
+export async function primeDrivers() {
+  if (!driverIndex) {
+    const drivers = await archive('drivers');
+    driverIndex = new Map(drivers.map((d) => [d.id, d]));
+  }
+  return driverIndex;
+}
+
+function nameFor(id) {
+  return driverIndex?.get(id)?.name ?? id.replace(/_/g, ' ');
+}
+
+function codeFor(id) {
+  const driver = driverIndex?.get(id);
+  if (driver?.code) return driver.code;
+  // Fall back to the last name's first three letters, as the sport does.
+  return (driver?.name ?? id).split(/[\s_]/).at(-1).slice(0, 3).toUpperCase();
 }

@@ -1,7 +1,0 @@
-# Copy to .dev.vars and fill in the two upstream base URLs.
-#
-# These are deliberately left blank: in production they are Cloudflare secrets
-# so the upstream hosts never appear in the repo, and committing them here would
-# defeat that. Your local .dev.vars (gitignored) holds the real values.
-HISTORY_API=""
-LIVE_API=""

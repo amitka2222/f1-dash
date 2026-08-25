@@ -30,8 +30,8 @@ export async function render(root) {
   root.append(loading('Loading championship state…'));
 
   const [standings, calendar] = await Promise.all([
-    driverStandings('current'),
-    schedule('current'),
+    driverStandings(),
+    schedule(),
   ]);
 
   clear(root);

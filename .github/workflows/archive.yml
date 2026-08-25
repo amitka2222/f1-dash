@@ -34,9 +34,7 @@ jobs:
 
       - name: Rebuild archive
         env:
-          # Kept in repository secrets so the upstream host is not committed,
-          # matching how the Worker hides it at runtime.
-          HISTORY_API: ${{ secrets.HISTORY_API }}
+          HISTORY_API: https://api.jolpi.ca/ergast/f1
         run: node scripts/build-archive.mjs
 
       - name: Commit if the archive changed

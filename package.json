@@ -1,15 +1,11 @@
 {
   "name": "f1-dash",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Formula 1 dashboard — live timing, head-to-head, title permutations and a full historical archive.",
+  "description": "Formula 1 dashboard \u2014 title permutations, driver head-to-heads, 76 years of records and race replays.",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "node scripts/dev-server.mjs",
     "build:archive": "node scripts/build-archive.mjs"
-  },
-  "devDependencies": {
-    "wrangler": "^4.0.0"
   }
 }

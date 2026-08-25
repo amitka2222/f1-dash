@@ -60,7 +60,7 @@ async function render() {
 /** Masthead badge: who leads, by how much, and how much is still on the table. */
 async function renderBadge() {
   try {
-    const { rows, round, season } = await driverStandings('current');
+    const { rows, round, season, builtAt } = await driverStandings();
     if (!rows.length) return;
 
     const [leader, second] = rows;
@@ -78,7 +78,18 @@ async function renderBadge() {
       ),
     );
 
-    footerEl.textContent = `${season} season · standings after round ${round}`;
+    // Standings are baked at build time, so say how fresh they actually are
+    // rather than implying they update continuously.
+    const built = builtAt
+      ? new Date(builtAt).toLocaleDateString(undefined, {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        })
+      : null;
+
+    footerEl.textContent =
+      `${season} season · after round ${round}` + (built ? ` · data updated ${built}` : '');
   } catch {
     // The badge is decoration; a failure here must not break the page.
     badgeEl.textContent = '';

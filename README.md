@@ -4,98 +4,92 @@ A Formula 1 dashboard built on free, public F1 data: championship permutations,
 driver head-to-heads, 76 years of records, and a race replay rebuilt from
 telemetry-grade timing data.
 
-Four views:
+Live at **https://amitka2222.github.io/f1-dash/**
 
-| View | What it does | Data source |
+| View | What it does | Data |
 | --- | --- | --- |
-| **Title Race** | Assign finishing positions to the contenders across every remaining round and watch the championship recompute. Handles sprint scoring. | Live standings + calendar |
-| **Head to Head** | Compare any two drivers since 1950 — wins, titles, season form, teams. | Pre-baked archive |
-| **Archive** | Every champion, race winner, constructor and circuit since 1950. | Pre-baked archive |
-| **Race Replay** | Final classification, position-change chart and tyre strategy for any race since 2023. | Session timing data |
+| **Title Race** | Assign finishing positions to the contenders across every remaining round and watch the championship recompute. Handles sprint scoring. | Static |
+| **Head to Head** | Compare any two drivers since 1950 — wins, titles, season form, teams. | Static |
+| **Archive** | Every champion, race winner, constructor and circuit since 1950. | Static |
+| **Race Replay** | Final classification, position-change chart and tyre strategy for any race since 2023. | Live API |
 
-## Architecture
+## How it works
 
-```
-browser  ──►  Cloudflare Worker  ──►  upstream APIs
-              (proxy + cache)         (hostnames in secrets)
-         └─►  /data/*.json
-              (pre-baked archive, served from the edge)
-```
+There is no server and no build step. GitHub Pages serves `public/` as-is:
+plain HTML, CSS and ES modules.
 
-The browser only ever talks to this origin. It never learns which upstream APIs
-sit behind it — the hostnames live in Cloudflare secrets, and the Worker strips
-the self-referential URL the history API echoes back inside its own payloads.
+Almost all of the data is **pre-baked into static JSON** by
+`scripts/build-archive.mjs`, which runs weekly in CI and commits the result.
+That is not premature optimisation — it is forced by the history provider:
 
-Two constraints drove the whole design:
+- It **rejects cross-season standings queries outright.** Every request must
+  name a single season, so a career comparison would cost roughly 40 calls.
+- It allows **500 requests/hour and 100 rows per page.**
 
-- **The upstream quotas are shared across all visitors.** 500 requests/hour for
-  history, 30/minute for timing. Those are consumed by everyone at once, so an
-  uncached site would fall over under a few dozen concurrent users. The Worker
-  caches by data class — completed seasons for 30 days, in-session timing for 4
-  seconds — and serves a stale copy rather than an error if an upstream fails.
-- **Cross-season queries aren't supported.** Every standings request must name a
-  single season, so a career comparison would cost ~40 live calls. Instead the
-  archive is pre-baked at build time into static JSON and served straight from
-  the edge, costing zero upstream requests at runtime.
+So the archive is assembled once at build time (~400 throttled requests, about
+7 minutes) and read as files thereafter. Three of the four views therefore make
+no third-party network calls at all.
 
-## Setup
+Only Race Replay queries a live API, and it does so **directly from the
+browser** — both providers send `access-control-allow-origin: *`. Calling direct
+also means each visitor spends their own rate-limit budget rather than drawing
+on a single shared server-side pool, which is the failure mode that actually
+takes a site like this down under load.
+
+### On hiding the data source
+
+An earlier version proxied everything through a Cloudflare Worker to keep the
+upstream hostnames out of the client. That is gone. A static site has no server,
+so the browser must call the API itself and the URL is visible in devtools.
+
+This was a deliberate trade: the proxy bought obscurity (not secrecy — the APIs
+are public and unauthenticated either way) at the cost of an entire moving part,
+a shared rate-limit pool, and a class of caching bugs that only appeared in
+production.
+
+## Development
 
 ```bash
-npm install
-cp .dev.vars.example .dev.vars   # fill in the two upstream base URLs
 npm run dev
 ```
 
-Build the archive (~400 throttled requests, about 7 minutes):
+Serves `public/` at http://localhost:8787. No install step, no dependencies.
+
+Rebuild the archive:
 
 ```bash
-HISTORY_API="<history-api-base-url>" npm run build:archive
+HISTORY_API="https://api.jolpi.ca/ergast/f1" npm run build:archive
 ```
 
 ## Deploying
 
-Set the upstream hostnames as Worker secrets so they never enter the repo:
+Pushing to `main` publishes to Pages. Enable it once under
+**Settings → Pages → Source → GitHub Actions**.
 
-```bash
-npx wrangler secret put HISTORY_API
-```
-
-```bash
-npx wrangler secret put LIVE_API
-```
-
-Then deploy:
-
-```bash
-npm run deploy
-```
-
-For CI, add repository secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
-and `HISTORY_API`. Pushing to `main` deploys; the archive refreshes every Monday
-morning and deploys itself when the data changes.
-
-## Going live during a session
-
-Race Replay is deliberately built as if it were live — the rendering path is the
-same one live timing needs. The timing provider classifies data as "live" from
-30 minutes before a session to 30 minutes after, and that window requires a paid
-sponsor tier (about €9.90/month). Everything outside it is free.
-
-To switch on true live timing, no rewrite is needed:
-
-1. Subscribe, and set the sponsor API key as a Worker secret.
-2. Attach it as a request header in `serve()` in `src/worker.js`.
-3. Poll `loadSession()` in `public/js/views/live.js` on an interval; the Worker
-   already caps in-session caching at 4 seconds so polling won't multiply
-   upstream load.
+The archive refreshes every Monday morning and publishes itself when the data
+changes — a data-only commit made with `GITHUB_TOKEN` does not re-trigger the
+push workflow, so `archive.yml` calls `deploy.yml` directly.
 
 ## Notes
 
 - Season standings can legitimately have no position — Michael Schumacher was
-  excluded from the 1997 championship — so unclassified seasons are stored as
-  null and rendered as such rather than being coerced to zero.
+  disqualified from the 1997 championship — so unclassified seasons are stored
+  as null and rendered as `DSQ`/`N/C` rather than coerced to zero.
 - `session_type: 'Race'` includes sprint races; they're flagged separately.
-- Sessions that haven't started yet are hidden from the replay picker, since
-  they have no timing data behind them.
+- Sessions that haven't started are hidden from the replay picker, since they
+  have no timing data behind them.
+- Asset paths are relative, because project Pages sites are served from
+  `/<repo>/` rather than the domain root.
+
+## Adding live timing later
+
+Race Replay is built as if it were live — the rendering path is the one live
+timing needs. The timing provider classifies data as "live" from 30 minutes
+before a session to 30 minutes after, and that window needs a paid tier (about
+€9.90/month). Everything outside it is free, which is why this ships as a replay.
+
+Turning it on means subscribing, then polling `loadSession()` in
+`public/js/views/live.js` on an interval. Note that an API key would need
+somewhere server-side to live — which would mean reintroducing a proxy.
 
 Unofficial. Not associated with Formula 1, the FIA, or any team.

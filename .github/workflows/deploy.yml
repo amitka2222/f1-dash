@@ -1,10 +1,11 @@
-name: Deploy
+name: Deploy to Pages
 
-# Publishes the Worker and its static assets to Cloudflare.
+# Publishes public/ to GitHub Pages. No build step — the site is plain HTML, CSS
+# and ES modules, and its data is committed as static JSON.
 #
-# Exposed as workflow_call so the archive refresh can deploy its own output:
-# a push made by GITHUB_TOKEN does not re-trigger workflows, so a data-only
-# commit would otherwise sit in the repo without ever reaching production.
+# Exposed as workflow_call so the archive refresh can publish its own output: a
+# push made with GITHUB_TOKEN does not re-trigger workflows, so a data-only
+# commit would otherwise never reach the live site.
 on:
   push:
     branches: [main]
@@ -13,31 +14,36 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
+# Let a running deploy finish rather than cancelling it — a half-published site
+# is worse than a slightly stale one.
 concurrency:
-  group: deploy
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Publish to Cloudflare
-        uses: cloudflare/wrangler-action@v3
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          path: public
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
