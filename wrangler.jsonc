@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "f1-dash",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+
+  // Static front-end. Asset paths are served directly from the edge; anything
+  // that doesn't match a file (i.e. /api/*) falls through to the Worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+
+  // HISTORY_API and LIVE_API are deliberately NOT declared here — they are set
+  // as secrets so the upstream hostnames never appear in the repo:
+  //   npx wrangler secret put HISTORY_API
+  //   npx wrangler secret put LIVE_API
+  // For local dev they come from .dev.vars (gitignored).
+}

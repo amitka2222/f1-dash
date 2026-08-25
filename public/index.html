@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>f1-dash</title>
+    <meta
+      name="description"
+      content="Formula 1 live timing, driver head-to-heads, championship permutations and 76 years of records."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=JetBrains+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/app.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🏎️</text></svg>"
+    />
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="brand" href="#/whatif">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-text">f1<span>dash</span></span>
+      </a>
+
+      <nav class="tabs" id="tabs">
+        <a href="#/whatif" data-route="whatif">Title Race</a>
+        <a href="#/h2h" data-route="h2h">Head to Head</a>
+        <a href="#/archive" data-route="archive">Archive</a>
+        <a href="#/live" data-route="live">Race Replay</a>
+      </nav>
+
+      <div class="season-badge" id="season-badge" title="Championship status"></div>
+    </header>
+
+    <main id="view" class="view" aria-live="polite">
+      <div class="loading">Loading…</div>
+    </main>
+
+    <footer class="footer">
+      <span id="footer-meta"></span>
+      <span class="footer-note">
+        Unofficial. Not associated with Formula 1 or the FIA.
+      </span>
+    </footer>
+
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>

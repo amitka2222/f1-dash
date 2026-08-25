@@ -1,0 +1,427 @@
+/* ---------------------------------------------------------------------------
+   f1-dash — dark, timing-screen inspired UI.
+   Layout is a fixed masthead + scrolling view, so each route only swaps #view.
+--------------------------------------------------------------------------- */
+
+:root {
+  --bg: #0a0c10;
+  --surface: #12151c;
+  --surface-2: #1a1e27;
+  --line: #262b36;
+  --line-soft: #1d222b;
+
+  --text: #e8ebf0;
+  --muted: #8b93a3;
+  --dim: #5b6373;
+
+  --accent: #e10600;
+  --accent-soft: rgba(225, 6, 0, 0.14);
+  --gold: #ffd24a;
+  --green: #3ddc84;
+  --blue: #4aa8ff;
+
+  --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --sans: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --radius: 10px;
+  --masthead-h: 60px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* A faint diagonal wash keeps the flat dark from looking like a dead page. */
+  background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(225, 6, 0, 0.1), transparent);
+  background-repeat: no-repeat;
+}
+
+/* --- masthead ------------------------------------------------------------ */
+
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--masthead-h);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 20px;
+  background: rgba(10, 12, 16, 0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.brand-mark {
+  width: 6px;
+  height: 22px;
+  background: var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 0 14px rgba(225, 6, 0, 0.7);
+}
+
+.brand-text {
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.brand-text span {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs a {
+  padding: 7px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s;
+}
+.tabs a:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.tabs a.active {
+  color: #fff;
+  background: var(--accent);
+}
+
+.season-badge {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  line-height: 1.35;
+  flex-shrink: 0;
+}
+.season-badge b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* --- view shell ---------------------------------------------------------- */
+
+.view {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+  min-height: calc(100vh - var(--masthead-h) - 60px);
+}
+
+.loading,
+.empty {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.error {
+  padding: 16px 18px;
+  border: 1px solid rgba(225, 6, 0, 0.4);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  color: #ffb3b0;
+  font-size: 14px;
+}
+
+.page-head {
+  margin-bottom: 22px;
+}
+.page-head h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.page-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 68ch;
+}
+
+/* --- generic surfaces ---------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.card-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+}
+.grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* --- controls ------------------------------------------------------------ */
+
+select,
+input[type='search'],
+button {
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 11px;
+}
+
+select:focus-visible,
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.15s, border-color 0.15s;
+}
+button:hover {
+  background: #232834;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.primary:hover {
+  background: #ff1a12;
+}
+button.ghost {
+  background: transparent;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.toolbar label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+}
+
+/* --- tables -------------------------------------------------------------- */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+tbody td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+tbody tr:last-child td {
+  border-bottom: none;
+}
+tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.pos {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--muted);
+  width: 34px;
+}
+.pos-1 {
+  color: var(--gold);
+}
+
+/* Team colour strip on the left of a standings row. */
+.team-strip {
+  display: inline-block;
+  width: 3px;
+  height: 15px;
+  border-radius: 2px;
+  margin-right: 9px;
+  vertical-align: -2px;
+  background: var(--dim);
+}
+
+.driver-cell {
+  display: flex;
+  align-items: center;
+  min-width: 190px;
+}
+.driver-name {
+  font-weight: 600;
+}
+.driver-team {
+  color: var(--dim);
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+/* --- stat tiles ---------------------------------------------------------- */
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+}
+.stat-value {
+  font-family: var(--mono);
+  font-size: 25px;
+  font-weight: 700;
+  margin-top: 5px;
+  letter-spacing: -0.02em;
+}
+.stat-sub {
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 2px;
+}
+
+/* --- footer -------------------------------------------------------------- */
+
+.footer {
+  border-top: 1px solid var(--line);
+  padding: 16px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--dim);
+  font-family: var(--mono);
+}
+
+/* --- responsive ---------------------------------------------------------- */
+
+@media (max-width: 880px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .grid-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .masthead {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    gap: 10px;
+  }
+  .season-badge {
+    order: 3;
+    margin-left: 0;
+    width: 100%;
+    text-align: left;
+  }
+  .grid-2,
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .view {
+    padding: 20px 14px 50px;
+  }
+  .page-head h1 {
+    font-size: 22px;
+  }
+}
