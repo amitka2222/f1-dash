@@ -53,13 +53,46 @@ export default {
     const match = url.pathname.match(/^\/api\/([hl])\/(.*)$/);
     if (!match) return json({ error: 'not_found' }, 404);
 
-    const [, kind, rest] = match;
-    const upstream = buildUpstream(kind, rest, url.searchParams, env);
-    if (!upstream) return json({ error: 'forbidden_path' }, 403);
+    try {
+      const [, kind, rest] = match;
+      const upstream = buildUpstream(kind, rest, url.searchParams, env);
+      if (!upstream) return json({ error: 'forbidden_path' }, 403);
 
-    return serve(request, upstream, ctx);
+      return await serve(url, upstream, ctx);
+    } catch (err) {
+      if (err instanceof ConfigError) {
+        // A misconfigured secret is our fault, and silently returning a raw
+        // platform error makes it near-impossible to diagnose from outside.
+        console.error(`Bad upstream configuration: ${err.message}`);
+        return json({ error: 'misconfigured_upstream', detail: err.message }, 500);
+      }
+      console.error(`Unhandled: ${err?.stack ?? err}`);
+      return json({ error: 'internal_error' }, 500);
+    }
   },
 };
+
+class ConfigError extends Error {}
+
+/**
+ * Normalise an upstream base URL from a secret.
+ *
+ * Secrets are typed or pasted by hand, so they arrive with surrounding quotes,
+ * stray whitespace or a trailing slash more often than not. Rather than letting
+ * `new URL` throw an opaque TypeError, clean the value and fail loudly.
+ */
+function upstreamBase(value, name) {
+  const cleaned = String(value ?? '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '')
+    .replace(/\/+$/, '');
+
+  if (!cleaned) throw new ConfigError(`${name} is not set`);
+  if (!/^https:\/\/[^\s/]+/i.test(cleaned)) {
+    throw new ConfigError(`${name} is not a valid https URL`);
+  }
+  return cleaned;
+}
 
 /**
  * Translate a public /api path into an upstream URL, rejecting anything not on
@@ -72,7 +105,7 @@ function buildUpstream(kind, rest, params, env) {
   if (kind === HISTORY) {
     if (!isAllowedHistoryPath(segments)) return null;
 
-    const target = new URL(`${env.HISTORY_API}/${segments.join('/')}.json`);
+    const target = new URL(`${upstreamBase(env.HISTORY_API, 'HISTORY_API')}/${segments.join('/')}.json`);
     copyParams(params, target, ['limit', 'offset']);
     // Ergast defaults to 30 rows; ask for a useful page when nothing is set.
     if (!target.searchParams.has('limit')) target.searchParams.set('limit', '100');
@@ -84,7 +117,7 @@ function buildUpstream(kind, rest, params, env) {
     const endpoint = segments[0].toLowerCase();
     if (!LIVE_ENDPOINTS.has(endpoint)) return null;
 
-    const target = new URL(`${env.LIVE_API}/${endpoint}`);
+    const target = new URL(`${upstreamBase(env.LIVE_API, 'LIVE_API')}/${endpoint}`);
     // Live filters are field-name based, so pass them through but cap the count
     // to keep cache keys bounded.
     let count = 0;
@@ -140,10 +173,19 @@ function liveTtl(endpoint) {
  * Fetch through the edge cache, falling back to a stale copy when the upstream
  * rate-limits or fails. A stale lap chart beats an error page.
  */
-async function serve(request, upstream, ctx) {
+async function serve(requestUrl, upstream, ctx) {
   const cache = caches.default;
-  const cacheKey = new Request(upstream.url.toString(), { method: 'GET' });
-  const staleKey = new Request(`${upstream.url.toString()}#stale`, { method: 'GET' });
+
+  // Cache under our OWN request path, never the upstream URL.
+  //
+  // `caches.default` and the subrequest cache share one namespace keyed by URL.
+  // Keying on the upstream URL therefore lets anything the fetch layer stored —
+  // including error responses — surface as one of our cache hits. That is not
+  // hypothetical: it cached a 429 and served it for the full TTL, which looked
+  // exactly like a permanent rate-limit ban.
+  const namespace = `https://cache.invalid${requestUrl.pathname}${requestUrl.search}`;
+  const cacheKey = new Request(namespace, { method: 'GET' });
+  const staleKey = new Request(`${namespace}#stale`, { method: 'GET' });
 
   const hit = await cache.match(cacheKey);
   if (hit) return decorate(hit, 'HIT');
@@ -157,7 +199,9 @@ async function serve(request, upstream, ctx) {
         'User-Agent': 'f1-dash (+https://github.com/f1-dash)',
         Accept: 'application/json',
       },
-      cf: { cacheTtl: upstream.ttl, cacheEverything: true },
+      // Deliberately no `cacheEverything`: it caches non-200s too. Caching is
+      // done explicitly below, only for responses that actually succeeded.
+      cf: { cacheTtl: 0 },
     });
   } catch {
     return (await serveStale(cache, staleKey)) ?? json({ error: 'upstream_unreachable' }, 502);
