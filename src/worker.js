@@ -88,10 +88,20 @@ function upstreamBase(value, name) {
     .replace(/\/+$/, '');
 
   if (!cleaned) throw new ConfigError(`${name} is not set`);
-  if (!/^https:\/\/[^\s/]+/i.test(cleaned)) {
-    throw new ConfigError(`${name} is not a valid https URL`);
+
+  // Accept a bare host or an http:// URL and upgrade it. One upstream documents
+  // its own base URL as http://, so demanding https here rejects the exact
+  // value a careful person would copy from the docs.
+  const withScheme = /^https?:\/\//i.test(cleaned) ? cleaned : `https://${cleaned}`;
+  const upgraded = withScheme.replace(/^http:\/\//i, 'https://');
+
+  try {
+    const parsed = new URL(upgraded);
+    if (!parsed.hostname.includes('.')) throw new Error('no host');
+    return upgraded;
+  } catch {
+    throw new ConfigError(`${name} is not a usable URL`);
   }
-  return cleaned;
 }
 
 /**
