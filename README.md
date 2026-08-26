@@ -54,6 +54,11 @@ circuit carries a rotation so it appears the way broadcasts show it.
 Note the position endpoint returns `No results found` rather than an error when
 you omit a date range — it *requires* one.
 
+A suspended session parks the whole field, sometimes for hours of session clock
+(the 2026 Dutch GP was red-flagged for most of its window). A stopped map is
+indistinguishable from a broken one, so the player detects a stationary field
+and says so rather than leaving you guessing.
+
 ## On hiding the data source
 
 An earlier version proxied everything through a Cloudflare Worker to keep the

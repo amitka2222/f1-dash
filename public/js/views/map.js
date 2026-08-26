@@ -28,6 +28,10 @@ const MIN_SAMPLE_GAP_MS = 500;
 
 const SPEEDS = [1, 2, 4, 8];
 
+// Longest delta we will ever advance in one frame. Covers a dropped frame or
+// two without letting a backgrounded tab bank up unlimited race time.
+const MAX_FRAME_MS = 250;
+
 export async function render(root) {
   root.append(
     el(
@@ -424,7 +428,11 @@ function createPlayer({ session, circuit, drivers, mount }) {
   }
 
   function tick(now) {
-    const dt = now - lastFrame;
+    // Browsers pause requestAnimationFrame in hidden tabs, so returning to the
+    // page hands us a gap of however long the visitor was away. Advancing the
+    // cursor by that raw delta would leap minutes ahead of the buffered data
+    // and strand playback; a frame is never legitimately longer than this.
+    const dt = Math.min(now - lastFrame, MAX_FRAME_MS);
     lastFrame = now;
 
     if (buffer.ready(startMs + cursor)) {
@@ -446,11 +454,19 @@ function createPlayer({ session, circuit, drivers, mount }) {
     if (playing) raf = requestAnimationFrame(tick);
   }
 
+  // Remembers where each car was a moment ago, purely to notice when the whole
+  // field has stopped.
+  let previous = new Map();
+  let lastStationaryCheck = 0;
+  let suspended = false;
+
   function paint() {
     const ms = startMs + cursor;
     clock.textContent = formatClock(cursor);
 
+    const now = new Map();
     let shown = 0;
+
     for (const [number, group] of markers) {
       const pos = buffer.at(number, ms);
       if (!pos) {
@@ -459,11 +475,30 @@ function createPlayer({ session, circuit, drivers, mount }) {
       }
       group.setAttribute('opacity', '1');
       group.setAttribute('transform', `translate(${pos.x} ${pos.y})`);
+      now.set(number, pos);
       shown++;
+    }
+
+    // A red flag parks the entire field, sometimes for hours of session clock.
+    // Without saying so, a stopped map is indistinguishable from a broken one —
+    // which is exactly how it reads the first time you see it.
+    if (ms - lastStationaryCheck > 3000) {
+      if (previous.size && shown >= 3) {
+        let moving = 0;
+        for (const [number, pos] of now) {
+          const was = previous.get(number);
+          if (was && Math.hypot(pos.x - was.x, pos.y - was.y) > 50) moving++;
+        }
+        suspended = moving === 0;
+      }
+      previous = now;
+      lastStationaryCheck = ms;
     }
 
     if (shown === 0 && buffer.ready(ms)) {
       statusText.textContent = 'No position data at this point in the session';
+    } else if (suspended && playing) {
+      statusText.textContent = 'Field stationary — session suspended (red flag)';
     }
   }
 
