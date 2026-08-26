@@ -37,6 +37,11 @@ jobs:
           HISTORY_API: https://api.jolpi.ca/ergast/f1
         run: node scripts/build-archive.mjs
 
+      # Refreshed alongside the archive so newly added venues pick up a track
+      # outline as soon as one is published.
+      - name: Rebuild circuit maps
+        run: node scripts/build-circuits.mjs
+
       - name: Commit if the archive changed
         id: commit
         run: |

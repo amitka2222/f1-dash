@@ -6,6 +6,7 @@
   "description": "Formula 1 dashboard \u2014 title permutations, driver head-to-heads, 76 years of records and race replays.",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
-    "build:archive": "node scripts/build-archive.mjs"
+    "build:archive": "node scripts/build-archive.mjs",
+    "build:circuits": "node scripts/build-circuits.mjs"
   }
 }

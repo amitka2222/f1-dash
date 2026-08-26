@@ -1,9 +1,11 @@
 /**
- * Title Race — championship permutation calculator.
+ * Title Race — what has to happen for each contender to win the championship.
  *
- * Takes the live standings and the remaining calendar, lets you assign a
- * finishing position to each contender in every remaining round, and recomputes
- * the final championship as you go.
+ * The default view answers the questions people actually ask — how big is the
+ * lead, when could it be sealed, what does each chaser need — without the
+ * visitor touching anything. The manual scenario builder is secondary and stays
+ * collapsed until asked for, because a wall of dropdowns is not a starting
+ * point, it's a follow-up.
  */
 
 import { driverStandings, schedule } from '../api.js';
@@ -13,36 +15,35 @@ import { el, clear, teamColour, fmt, select, loading } from '../util.js';
 const RACE_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 const SPRINT_POINTS = [8, 7, 6, 5, 4, 3, 2, 1];
 
+const WIN = RACE_POINTS[0];
+const SPRINT_WIN = SPRINT_POINTS[0];
+
 const DNF = 'DNF';
-const DEFAULT_TRACKED = 5;
+const CONTENDERS = 5;
 
 const racePoints = (pos) => (pos === DNF ? 0 : (RACE_POINTS[pos - 1] ?? 0));
 const sprintPoints = (pos) => (pos === DNF ? 0 : (SPRINT_POINTS[pos - 1] ?? 0));
 
-/** Positions offered per race: the points-paying places plus a DNF. */
 const POSITION_OPTIONS = [
   ...RACE_POINTS.map((_, i) => ({ value: String(i + 1), label: fmt.ordinal(i + 1) })),
-  { value: '11', label: '11th+ (no points)' },
+  { value: '11', label: '11th+' },
   { value: DNF, label: 'DNF' },
 ];
+
+/** Maximum points still available across a set of rounds. */
+const maxPoints = (races) =>
+  races.length * WIN + races.filter((r) => r.sprint).length * SPRINT_WIN;
 
 export async function render(root) {
   root.append(loading('Loading championship state…'));
 
-  const [standings, calendar] = await Promise.all([
-    driverStandings(),
-    schedule(),
-  ]);
-
+  const [standings, calendar] = await Promise.all([driverStandings(), schedule()]);
   clear(root);
 
   const remaining = calendar.filter((r) => r.round > standings.round);
-  const tracked = standings.rows.slice(0, DEFAULT_TRACKED);
-
-  // scenario[round][driverId] = position string
-  const scenario = defaultScenario(remaining, tracked);
-
-  const state = { standings, calendar, remaining, tracked, scenario };
+  const tracked = standings.rows.slice(0, CONTENDERS);
+  const scenario = baselineScenario(remaining, tracked);
+  const state = { standings, remaining, tracked, scenario };
 
   root.append(
     el(
@@ -53,38 +54,190 @@ export async function render(root) {
         'p',
         {},
         remaining.length
-          ? `${remaining.length} rounds left. Set a finishing position for each contender and the championship recalculates instantly.`
+          ? `${standings.rows[0].name} leads with ${remaining.length} rounds still to run. ` +
+              `Here's what each contender needs — and what would have to go wrong.`
           : 'The season is complete — every round has been scored.',
       ),
     ),
   );
 
-  root.append(renderSummary(state));
-
   if (!remaining.length) {
-    root.append(renderFinal(state));
+    root.append(renderFinalStandings(state));
     return;
   }
 
-  // Both panels re-render into stable containers, so a preset can rebuild the
-  // selects without any node-swapping bookkeeping.
-  const gridHost = el('div');
-  const results = el('div');
-
-  root.append(renderPresets(state, () => refresh(true)), gridHost, results);
-
-  function refresh(rebuildGrid = false) {
-    if (rebuildGrid) {
-      clear(gridHost).append(renderScenarioGrid(state, () => refresh()));
-    }
-    clear(results).append(renderProjection(state));
-  }
-
-  refresh(true);
+  root.append(renderHeadline(state), renderNeeds(state), renderBuilder(state));
 }
 
-/** Neutral starting point: everyone finishes where they currently sit. */
-function defaultScenario(remaining, tracked) {
+/* --- headline ------------------------------------------------------------- */
+
+/**
+ * Earliest round at which the leader could mathematically seal the title,
+ * assuming the best case for them: they win every race, the nearest rival
+ * finishes second in every race.
+ */
+function earliestClinch({ standings, remaining }) {
+  const [leader, rival] = standings.rows;
+  if (!rival) return null;
+
+  let gap = leader.points - rival.points;
+
+  for (const [index, race] of remaining.entries()) {
+    // Leader wins, rival is runner-up: the gap grows by the difference.
+    gap += WIN - RACE_POINTS[1];
+    if (race.sprint) gap += SPRINT_WIN - SPRINT_POINTS[1];
+
+    const left = remaining.slice(index + 1);
+    if (gap > maxPoints(left)) return { race, round: race.round, gap };
+  }
+
+  return null;
+}
+
+function renderHeadline(state) {
+  const { standings, remaining } = state;
+  const [leader, second] = standings.rows;
+  const available = maxPoints(remaining);
+  const clinch = earliestClinch(state);
+  const sprints = remaining.filter((r) => r.sprint).length;
+
+  const tile = (label, value, sub) =>
+    el(
+      'div',
+      { class: 'stat' },
+      el('div', { class: 'stat-label' }, label),
+      el('div', { class: 'stat-value' }, value),
+      el('div', { class: 'stat-sub' }, sub),
+    );
+
+  return el(
+    'div',
+    { class: 'grid grid-4', style: 'margin-bottom:24px' },
+    tile('Leads the championship', leader.code, `${leader.name} · ${fmt.points(leader.points)} pts`),
+    tile(
+      'Lead over 2nd',
+      second ? fmt.points(leader.points - second.points) : '—',
+      second ? `${second.name} on ${fmt.points(second.points)}` : 'no rival',
+    ),
+    tile(
+      'Still to play for',
+      String(available),
+      `${remaining.length} rounds${sprints ? ` · ${sprints} sprint` : ''}`,
+    ),
+    clinch
+      ? tile('Could clinch as early as', `R${clinch.round}`, clinch.race.name)
+      : tile('Could clinch as early as', '—', 'not before the finale'),
+  );
+}
+
+/* --- what each contender needs -------------------------------------------- */
+
+/**
+ * For each chaser, the average per-race margin they need over the leader to
+ * overturn the deficit. That's a far more intuitive answer than a raw points
+ * total: "beat him by 6 points a race" means something, "make up 59" doesn't.
+ */
+function renderNeeds(state) {
+  const { standings, remaining } = state;
+  const leader = standings.rows[0];
+  const available = maxPoints(remaining);
+
+  const rows = standings.rows.slice(0, 8).map((driver, index) => {
+    const deficit = leader.points - driver.points;
+    const alive = deficit <= available;
+    const perRace = deficit / remaining.length;
+
+    // The most you can gain on a rival in one race is a win against their zero
+    // (25). Beating them into second only swings 7 — so anyone needing more
+    // than that per race cannot do it on their own results alone; the leader
+    // has to actually drop points somewhere.
+    const swingIfLeaderSecond = WIN - RACE_POINTS[1];
+
+    let verdict;
+    if (index === 0) {
+      verdict = el('span', { style: 'color:var(--gold)' }, 'Leads the championship');
+    } else if (!alive) {
+      verdict = el('span', { style: 'color:var(--dim)' }, 'Cannot win the title');
+    } else if (perRace > swingIfLeaderSecond) {
+      verdict = el(
+        'span',
+        { style: 'color:var(--muted)' },
+        `Needs ${perRace.toFixed(1)} pts/race — winning every race isn't enough on its own, ` +
+          `so ${leader.code} has to drop points too`,
+      );
+    } else {
+      verdict = el(
+        'span',
+        {},
+        `Enough to win every race with `,
+        el('b', {}, leader.code),
+        ` second: needs `,
+        el('b', {}, perRace.toFixed(1)),
+        ' pts per race',
+      );
+    }
+
+    return el(
+      'tr',
+      {},
+      el('td', { class: `pos ${index === 0 ? 'pos-1' : ''}` }, String(index + 1)),
+      el(
+        'td',
+        {},
+        el(
+          'span',
+          { class: 'driver-cell' },
+          el('span', { class: 'team-strip', style: `background:${teamColour(driver.constructorId)}` }),
+          el('span', { class: 'driver-name' }, driver.name),
+          el('span', { class: 'driver-team' }, driver.constructor),
+        ),
+      ),
+      el('td', { class: 'num' }, fmt.points(driver.points)),
+      el('td', { class: 'num', style: index === 0 ? 'color:var(--dim)' : '' },
+        index === 0 ? '—' : `−${fmt.points(deficit)}`),
+      el('td', { style: 'white-space:normal;min-width:280px' }, verdict),
+    );
+  });
+
+  return el(
+    'div',
+    { style: 'margin-bottom:24px' },
+    el(
+      'div',
+      { class: 'table-wrap' },
+      el(
+        'table',
+        {},
+        el(
+          'thead',
+          {},
+          el(
+            'tr',
+            {},
+            el('th', {}, ''),
+            el('th', {}, 'Driver'),
+            el('th', {}, 'Points'),
+            el('th', {}, 'Behind'),
+            el('th', {}, 'What they need'),
+          ),
+        ),
+        el('tbody', {}, rows),
+      ),
+    ),
+    el(
+      'p',
+      { class: 'stat-sub', style: 'margin-top:10px;max-width:78ch' },
+      `A win is worth ${WIN} points and second ${RACE_POINTS[1]}, so beating the leader into ` +
+        `second gains you just ${WIN - RACE_POINTS[1]} a race. The full ${WIN} only swings your ` +
+        `way if they finish out of the points altogether.`,
+    ),
+  );
+}
+
+/* --- scenario builder (collapsed by default) ------------------------------- */
+
+/** Baseline: everyone holds the position they currently hold in the standings. */
+function baselineScenario(remaining, tracked) {
   const scenario = {};
   for (const race of remaining) {
     scenario[race.round] = {};
@@ -95,52 +248,63 @@ function defaultScenario(remaining, tracked) {
   return scenario;
 }
 
-/* --- summary tiles -------------------------------------------------------- */
+function renderBuilder(state) {
+  const { tracked } = state;
 
-function renderSummary(state) {
-  const { standings, remaining } = state;
-  const [leader, second] = standings.rows;
+  const body = el('div', { style: 'display:none' });
+  let open = false;
 
-  const sprintsLeft = remaining.filter((r) => r.sprint).length;
-  const maxRemaining = remaining.length * RACE_POINTS[0] + sprintsLeft * SPRINT_POINTS[0];
+  const toggle = el(
+    'button',
+    {
+      onclick: () => {
+        open = !open;
+        body.style.display = open ? 'block' : 'none';
+        toggle.textContent = open ? 'Hide scenario builder' : 'Build your own scenario';
+        if (open && !body.childElementCount) fill();
+      },
+    },
+    'Build your own scenario',
+  );
 
-  const alive = standings.rows.filter((d) => d.points + maxRemaining >= leader.points);
-  const decided = remaining.length > 0 && alive.length <= 1;
+  const gridHost = el('div');
+  const results = el('div');
+
+  function refresh(rebuildGrid = false) {
+    if (rebuildGrid) clear(gridHost).append(renderScenarioGrid(state, () => refresh()));
+    clear(results).append(renderProjection(state));
+  }
+
+  function fill() {
+    body.append(
+      el(
+        'p',
+        { style: 'color:var(--muted);font-size:14px;max-width:70ch;margin:0 0 14px' },
+        'Each row is a remaining Grand Prix and each column is a title contender. ' +
+          'Set where you think they finish and the final championship below updates. ' +
+          'It starts from a baseline where everyone simply holds their current championship position.',
+      ),
+      renderPresets(state, () => refresh(true)),
+      gridHost,
+      results,
+    );
+    refresh(true);
+  }
 
   return el(
     'div',
-    { class: 'grid grid-4', style: 'margin-bottom:22px' },
-
-    tile('Championship leader', leader.code, `${leader.name} · ${fmt.points(leader.points)} pts`),
-    tile(
-      'Lead',
-      second ? `${fmt.points(leader.points - second.points)}` : '—',
-      second ? `over ${second.name}` : 'no rival',
+    { class: 'card' },
+    el('h2', { class: 'card-title' }, 'Play it out yourself'),
+    el(
+      'p',
+      { style: 'margin:-6px 0 12px;color:var(--muted);font-size:14px;max-width:70ch' },
+      `Want to test a specific run of results — a retirement, a bad weekend, a comeback? ` +
+        `Set finishing positions for the top ${tracked.length} and see where the championship lands.`,
     ),
-    tile(
-      'Still on the table',
-      String(maxRemaining),
-      `${remaining.length} rounds${sprintsLeft ? ` · ${sprintsLeft} sprint` : ''}`,
-    ),
-    tile(
-      'Mathematically alive',
-      String(Math.max(alive.length, 1)),
-      decided ? 'title already decided' : `of ${standings.rows.length} drivers`,
-    ),
+    toggle,
+    body,
   );
 }
-
-function tile(label, value, sub) {
-  return el(
-    'div',
-    { class: 'stat' },
-    el('div', { class: 'stat-label' }, label),
-    el('div', { class: 'stat-value' }, value),
-    el('div', { class: 'stat-sub' }, sub),
-  );
-}
-
-/* --- presets -------------------------------------------------------------- */
 
 function renderPresets(state, onChange) {
   const { remaining, tracked, scenario } = state;
@@ -154,45 +318,31 @@ function renderPresets(state, onChange) {
     onChange();
   };
 
+  const preset = (label, title, fn) =>
+    el('button', { title, onclick: () => apply(fn) }, label);
+
   return el(
     'div',
     { class: 'toolbar' },
-    el('label', {}, 'Presets'),
-    el(
-      'button',
-      { onclick: () => apply((_, index) => String(index + 1)) },
-      'Current form',
+    el('label', {}, 'Quick scenarios'),
+    preset('Form holds', 'Everyone finishes in their current championship order', (_, i) =>
+      String(i + 1),
     ),
-    el(
-      'button',
-      {
-        onclick: () =>
-          apply((driver, index) => (index === 0 ? '1' : String(index + 1))),
-      },
-      'Leader wins out',
+    preset(`${tracked[0].code} wins out`, `${tracked[0].name} wins every remaining race`, (_, i) =>
+      i === 0 ? '1' : String(i + 1),
     ),
-    el(
-      'button',
-      {
-        // Flip the order so the chaser wins every remaining round.
-        onclick: () =>
-          apply((driver, index) => {
-            if (index === 1) return '1';
-            if (index === 0) return '2';
-            return String(index + 1);
-          }),
-      },
-      'Challenger wins out',
+    preset(
+      `${tracked[1].code} wins out`,
+      `${tracked[1].name} wins every remaining race`,
+      (_, i) => (i === 1 ? '1' : i === 0 ? '2' : String(i + 1)),
     ),
-    el(
-      'button',
-      { onclick: () => apply((driver, index) => (index === 0 ? DNF : String(index))) },
-      'Leader DNFs out',
+    preset(
+      `${tracked[0].code} retires`,
+      `${tracked[0].name} fails to finish every remaining race`,
+      (_, i) => (i === 0 ? DNF : String(i)),
     ),
   );
 }
-
-/* --- scenario grid -------------------------------------------------------- */
 
 function renderScenarioGrid(state, onChange) {
   const { remaining, tracked, scenario } = state;
@@ -205,7 +355,7 @@ function renderScenarioGrid(state, onChange) {
     tracked.map((d) =>
       el(
         'th',
-        { style: `border-bottom:2px solid ${teamColour(d.constructorId)}` },
+        { style: `border-bottom:2px solid ${teamColour(d.constructorId)}`, title: d.name },
         d.code,
       ),
     ),
@@ -220,7 +370,13 @@ function renderScenarioGrid(state, onChange) {
         'td',
         {},
         race.name,
-        race.sprint ? el('span', { class: 'driver-team' }, 'SPRINT') : null,
+        race.sprint
+          ? el(
+              'span',
+              { class: 'driver-team', title: 'Sprint weekend — extra points available' },
+              'SPRINT',
+            )
+          : null,
       ),
       tracked.map((driver) =>
         el(
@@ -233,7 +389,7 @@ function renderScenarioGrid(state, onChange) {
               scenario[race.round][driver.driverId] = value;
               onChange();
             },
-            { 'aria-label': `${driver.name} at ${race.name}` },
+            { 'aria-label': `${driver.name} at the ${race.name}` },
           ),
         ),
       ),
@@ -242,7 +398,7 @@ function renderScenarioGrid(state, onChange) {
 
   return el(
     'div',
-    { class: 'table-wrap', style: 'margin-bottom:22px' },
+    { class: 'table-wrap', style: 'margin-bottom:20px' },
     el('table', {}, el('thead', {}, head), el('tbody', {}, rows)),
   );
 }
@@ -256,19 +412,18 @@ function project(state) {
   return standings.rows
     .map((driver) => {
       if (!trackedIds.has(driver.driverId)) {
-        // Untracked drivers are assumed to score nothing further, so the
-        // projection stays a comparison between the contenders you chose.
-        return { ...driver, gained: 0, projected: driver.points, wins: driver.wins };
+        return { ...driver, gained: 0, projected: driver.points };
       }
 
       let gained = 0;
       let wins = driver.wins;
 
       for (const race of remaining) {
-        const pos = scenario[race.round][driver.driverId];
-        gained += racePoints(pos === DNF ? DNF : Number(pos));
-        if (race.sprint) gained += sprintPoints(pos === DNF ? DNF : Number(pos));
-        if (pos === '1') wins += 1;
+        const raw = scenario[race.round][driver.driverId];
+        const pos = raw === DNF ? DNF : Number(raw);
+        gained += racePoints(pos);
+        if (race.sprint) gained += sprintPoints(pos);
+        if (raw === '1') wins += 1;
       }
 
       return { ...driver, gained, projected: driver.points + gained, wins };
@@ -280,9 +435,8 @@ function renderProjection(state) {
   const projected = project(state);
   const [champion, runnerUp] = projected;
   const margin = champion.projected - (runnerUp?.projected ?? 0);
-  const tieBroken = margin === 0 && runnerUp;
 
-  const rows = projected.slice(0, 10).map((d, i) =>
+  const rows = projected.slice(0, 8).map((d, i) =>
     el(
       'tr',
       {},
@@ -293,35 +447,27 @@ function renderProjection(state) {
         el(
           'span',
           { class: 'driver-cell' },
-          el('span', {
-            class: 'team-strip',
-            style: `background:${teamColour(d.constructorId)}`,
-          }),
+          el('span', { class: 'team-strip', style: `background:${teamColour(d.constructorId)}` }),
           el('span', { class: 'driver-name' }, d.name),
-          el('span', { class: 'driver-team' }, d.constructor),
         ),
       ),
       el('td', { class: 'num' }, fmt.points(d.points)),
-      el('td', { class: 'num', style: d.gained ? 'color:var(--green)' : '' },
+      el('td', { class: 'num', style: d.gained ? 'color:var(--green)' : 'color:var(--dim)' },
         d.gained ? `+${fmt.points(d.gained)}` : '—'),
       el('td', { class: 'num', style: 'font-weight:700' }, fmt.points(d.projected)),
-      el('td', { class: 'num' }, String(d.wins)),
     ),
   );
 
   return el(
     'div',
-    { class: 'card' },
-    el('h2', { class: 'card-title' }, 'Projected final championship'),
-
+    {},
     el(
       'p',
-      { style: 'margin:-6px 0 14px;color:var(--muted);font-size:14px' },
-      tieBroken
-        ? `${champion.name} takes the title on countback — level on points with ${runnerUp.name}, ahead on wins.`
+      { style: 'font-size:15px;margin:0 0 12px' },
+      margin === 0 && runnerUp
+        ? `${champion.name} takes it on countback — level with ${runnerUp.name}, ahead on wins.`
         : `${champion.name} wins the championship by ${fmt.points(margin)} ${margin === 1 ? 'point' : 'points'}.`,
     ),
-
     el(
       'div',
       { class: 'table-wrap' },
@@ -337,26 +483,25 @@ function renderProjection(state) {
             el('th', {}, ''),
             el('th', {}, 'Driver'),
             el('th', {}, 'Now'),
-            el('th', {}, 'Gained'),
+            el('th', {}, 'Gains'),
             el('th', {}, 'Final'),
-            el('th', {}, 'Wins'),
           ),
         ),
         el('tbody', {}, rows),
       ),
     ),
-
     el(
       'p',
-      { class: 'stat-sub', style: 'margin-top:12px' },
-      'Only the tracked contenders score in this projection; everyone else is held at their current total.',
+      { class: 'stat-sub', style: 'margin-top:10px' },
+      'Only the contenders above score in this projection — everyone else stays on their current total.',
     ),
   );
 }
 
-/** Season already finished — just show how it ended. */
-function renderFinal(state) {
-  const rows = state.standings.rows.slice(0, 10).map((d, i) =>
+/* --- completed season ------------------------------------------------------ */
+
+function renderFinalStandings({ standings }) {
+  const rows = standings.rows.slice(0, 10).map((d, i) =>
     el(
       'tr',
       {},
@@ -383,11 +528,7 @@ function renderFinal(state) {
     el(
       'table',
       {},
-      el(
-        'thead',
-        {},
-        el('tr', {}, el('th', {}, ''), el('th', {}, 'Driver'), el('th', {}, 'Points'), el('th', {}, 'Wins')),
-      ),
+      el('thead', {}, el('tr', {}, el('th', {}, ''), el('th', {}, 'Driver'), el('th', {}, 'Points'), el('th', {}, 'Wins'))),
       el('tbody', {}, rows),
     ),
   );

@@ -12,6 +12,7 @@ const ROUTES = {
   whatif: () => import('./views/whatif.js'),
   h2h: () => import('./views/h2h.js'),
   archive: () => import('./views/archive.js'),
+  map: () => import('./views/map.js'),
   live: () => import('./views/live.js'),
 };
 
