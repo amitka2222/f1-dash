@@ -16,10 +16,10 @@ const CURRENT_YEAR = new Date().getUTCFullYear();
 
 const TYRE_COLOURS = {
   SOFT: '#e10600',
-  MEDIUM: '#ffd24a',
-  HARD: '#e8ebf0',
-  INTERMEDIATE: '#3ddc84',
-  WET: '#4aa8ff',
+  MEDIUM: '#eab308',
+  HARD: '#94a3b8',
+  INTERMEDIATE: '#16a34a',
+  WET: '#2563eb',
 };
 
 export async function render(root) {
@@ -117,7 +117,7 @@ export async function render(root) {
   await loadYear(year);
 }
 
-const colourOf = (driver) => (driver?.team_colour ? `#${driver.team_colour}` : '#5b6373');
+const colourOf = (driver) => (driver?.team_colour ? `#${driver.team_colour}` : '#6b7280');
 
 /** Last recorded position per driver is the finishing order. */
 function finalOrder(positions) {
@@ -237,12 +237,12 @@ function renderProgression(byNumber, positions) {
         x2: PAD.left + plotW,
         y1: y(pos),
         y2: y(pos),
-        stroke: '#1d222b',
+        stroke: '#dce1e8',
         'stroke-width': 1,
       }),
       svg(
         'text',
-        { x: PAD.left - 8, y: y(pos) + 4, fill: '#5b6373', 'font-size': 10, 'text-anchor': 'end' },
+        { x: PAD.left - 8, y: y(pos) + 4, fill: '#6b7280', 'font-size': 10, 'text-anchor': 'end' },
         [document.createTextNode(String(pos))],
       ),
     );
@@ -330,7 +330,7 @@ function renderStints(byNumber, stints) {
           const compound = (s.compound ?? '').toUpperCase();
           return el('div', {
             style:
-              `width:${width}%;background:${TYRE_COLOURS[compound] ?? '#5b6373'};` +
+              `width:${width}%;background:${TYRE_COLOURS[compound] ?? '#6b7280'};` +
               'height:14px;border-radius:2px;margin-right:2px;flex-shrink:0',
             title: `${compound || 'unknown'} · laps ${start}–${end}`,
           });
