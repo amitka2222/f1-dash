@@ -63,5 +63,12 @@ jobs:
   publish:
     needs: refresh
     if: needs.refresh.outputs.changed == 'true'
+    # A called workflow cannot request more permissions than its caller grants,
+    # so the Pages permissions deploy.yml needs must be granted here too —
+    # omitting them fails the whole file at startup, before any job runs.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     uses: ./.github/workflows/deploy.yml
     secrets: inherit

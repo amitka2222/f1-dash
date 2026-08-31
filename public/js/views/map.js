@@ -186,11 +186,11 @@ function buildStage(circuit) {
   });
 
   world.append(
-    // A wide dark stroke under a thin light one reads as tarmac with an edge.
+    // A wide light stroke under a narrower dark one reads as tarmac with a kerb.
     svg('path', {
       d,
       fill: 'none',
-      stroke: '#22272f',
+      stroke: '#b8bfc9',
       'stroke-width': 260,
       'stroke-linejoin': 'round',
       'stroke-linecap': 'round',
@@ -198,7 +198,7 @@ function buildStage(circuit) {
     svg('path', {
       d,
       fill: 'none',
-      stroke: '#0a0c10',
+      stroke: '#454b57',
       'stroke-width': 200,
       'stroke-linejoin': 'round',
       'stroke-linecap': 'round',
@@ -206,7 +206,7 @@ function buildStage(circuit) {
     svg('path', {
       d,
       fill: 'none',
-      stroke: '#3a4150',
+      stroke: '#e8ebef',
       'stroke-width': 6,
       'stroke-dasharray': '40 40',
       'stroke-linejoin': 'round',
@@ -344,7 +344,7 @@ function createPlayer({ session, circuit, drivers, mount }) {
 
     const group = svg('g', { opacity: 0 });
     group.append(
-      svg('circle', { r: 130, fill: colour, stroke: '#0a0c10', 'stroke-width': 26 }),
+      svg('circle', { r: 130, fill: colour, stroke: '#ffffff', 'stroke-width': 26 }),
       // Counter-flip so the label is not mirrored by the scene's y flip.
       svg(
         'g',
@@ -355,13 +355,13 @@ function createPlayer({ session, circuit, drivers, mount }) {
             {
               x: 0,
               y: 250,
-              fill: '#e8ebf0',
+              fill: '#16181d',
               'font-size': 200,
               'font-family': 'JetBrains Mono, monospace',
               'font-weight': 700,
               'text-anchor': 'middle',
               'paint-order': 'stroke',
-              stroke: '#0a0c10',
+              stroke: '#ffffff',
               'stroke-width': 60,
             },
             [document.createTextNode(d.name_acronym ?? String(d.driver_number))],

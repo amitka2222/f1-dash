@@ -16,10 +16,10 @@ const CURRENT_YEAR = new Date().getUTCFullYear();
 
 const TYRE_COLOURS = {
   SOFT: '#e10600',
-  MEDIUM: '#ffd24a',
-  HARD: '#e8ebf0',
-  INTERMEDIATE: '#3ddc84',
-  WET: '#4aa8ff',
+  MEDIUM: '#d9a800',
+  HARD: '#8d959e', // the white compound, drawn grey so it survives a white card
+  INTERMEDIATE: '#0f8a4d',
+  WET: '#1d63d8',
 };
 
 export async function render(root) {
@@ -237,12 +237,12 @@ function renderProgression(byNumber, positions) {
         x2: PAD.left + plotW,
         y1: y(pos),
         y2: y(pos),
-        stroke: '#1d222b',
+        stroke: '#e8ebef',
         'stroke-width': 1,
       }),
       svg(
         'text',
-        { x: PAD.left - 8, y: y(pos) + 4, fill: '#5b6373', 'font-size': 10, 'text-anchor': 'end' },
+        { x: PAD.left - 8, y: y(pos) + 4, fill: '#8b93a3', 'font-size': 10, 'text-anchor': 'end' },
         [document.createTextNode(String(pos))],
       ),
     );

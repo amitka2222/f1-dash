@@ -13,7 +13,7 @@ import { el, clear, teamColour, fmt, loading, errorBox } from '../util.js';
 // an empty form.
 const DEFAULT_PAIR = ['hamilton', 'michael_schumacher'];
 
-const SIDE_COLOURS = ['#4aa8ff', '#e10600'];
+const SIDE_COLOURS = ['#1d63d8', '#e10600'];
 
 export async function render(root, args) {
   root.append(loading('Loading driver index…'));

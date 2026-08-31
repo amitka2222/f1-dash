@@ -1,24 +1,26 @@
 /* ---------------------------------------------------------------------------
-   f1-dash — dark, timing-screen inspired UI.
+   f1-dash — light, timing-screen inspired UI.
    Layout is a fixed masthead + scrolling view, so each route only swaps #view.
 --------------------------------------------------------------------------- */
 
 :root {
-  --bg: #0a0c10;
-  --surface: #12151c;
-  --surface-2: #1a1e27;
-  --line: #262b36;
-  --line-soft: #1d222b;
+  color-scheme: light;
 
-  --text: #e8ebf0;
-  --muted: #8b93a3;
-  --dim: #5b6373;
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --line: #dde1e7;
+  --line-soft: #e8ebef;
+
+  --text: #16181d;
+  --muted: #5b6373;
+  --dim: #8b93a3;
 
   --accent: #e10600;
-  --accent-soft: rgba(225, 6, 0, 0.14);
-  --gold: #ffd24a;
-  --green: #3ddc84;
-  --blue: #4aa8ff;
+  --accent-soft: rgba(225, 6, 0, 0.08);
+  --gold: #b8860b;
+  --green: #0f8a4d;
+  --blue: #1d63d8;
 
   --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --sans: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -44,8 +46,8 @@ body {
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  /* A faint diagonal wash keeps the flat dark from looking like a dead page. */
-  background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(225, 6, 0, 0.1), transparent);
+  /* A faint red wash at the top keeps the flat background from feeling inert. */
+  background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(225, 6, 0, 0.04), transparent);
   background-repeat: no-repeat;
 }
 
@@ -60,7 +62,7 @@ body {
   align-items: center;
   gap: 24px;
   padding: 0 20px;
-  background: rgba(10, 12, 16, 0.88);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
@@ -79,7 +81,7 @@ body {
   height: 22px;
   background: var(--accent);
   border-radius: 2px;
-  box-shadow: 0 0 14px rgba(225, 6, 0, 0.7);
+  box-shadow: 0 0 10px rgba(225, 6, 0, 0.35);
 }
 
 .brand-text {
@@ -155,10 +157,10 @@ body {
 
 .error {
   padding: 16px 18px;
-  border: 1px solid rgba(225, 6, 0, 0.4);
+  border: 1px solid rgba(225, 6, 0, 0.35);
   background: var(--accent-soft);
   border-radius: var(--radius);
-  color: #ffb3b0;
+  color: #b91c1c;
   font-size: 14px;
 }
 
@@ -185,6 +187,7 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 18px;
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.05);
 }
 
 .card-title {
@@ -237,7 +240,7 @@ button {
   transition: background 0.15s, border-color 0.15s;
 }
 button:hover {
-  background: #232834;
+  background: #e3e6eb;
 }
 button.primary {
   background: var(--accent);
@@ -273,6 +276,7 @@ button.ghost {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.05);
 }
 
 table {
@@ -305,7 +309,7 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 tbody tr:hover td {
-  background: rgba(255, 255, 255, 0.025);
+  background: rgba(22, 24, 29, 0.035);
 }
 
 .num {
@@ -354,6 +358,7 @@ tbody tr:hover td {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 14px 16px;
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.05);
 }
 .stat-label {
   font-size: 11px;
