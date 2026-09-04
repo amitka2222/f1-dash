@@ -42,12 +42,20 @@ jobs:
       - name: Rebuild circuit maps
         run: node scripts/build-circuits.mjs
 
+      # Regenerates a page per Grand Prix. Incident messages are skipped when
+      # the timing provider is closed (it blocks all access during any live
+      # session), so this must not be scheduled against a race weekend.
+      - name: Rebuild race pages
+        env:
+          HISTORY_API: https://api.jolpi.ca/ergast/f1
+        run: node scripts/build-races.mjs
+
       - name: Commit if the archive changed
         id: commit
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/data
+          git add public/data public/races
           if git diff --cached --quiet; then
             echo "Archive unchanged — nothing to commit."
             echo "changed=false" >> "$GITHUB_OUTPUT"

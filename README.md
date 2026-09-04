@@ -13,6 +13,7 @@ Live at **https://amitka2222.github.io/f1-dash/**
 | **Archive** | Every champion, race winner, constructor and circuit since 1950. | Static |
 | **Track Map** | Every car replayed around the real circuit, with playback controls. | Static + live |
 | **Race Replay** | Final classification, position-change chart and tyre strategy for any race since 2023. | Live API |
+| **Races** | A generated page per Grand Prix — classification, qualifying, sprint, pit stops, incidents. | Static HTML |
 
 ## How it works
 
@@ -58,6 +59,33 @@ A suspended session parks the whole field, sometimes for hours of session clock
 (the 2026 Dutch GP was red-flagged for most of its window). A stopped map is
 indistinguishable from a broken one, so the player detects a stationary field
 and says so rather than leaving you guessing.
+
+### Generated race pages
+
+`scripts/build-races.mjs` emits one real HTML file per Grand Prix into
+`public/races/`, plus an index. Unlike the rest of the site — a single
+hash-routed page — these have their own URLs, so a race can be linked, shared
+and indexed, and they contain no `<script>` at all.
+
+Cost is kept low by pulling a whole season's results, qualifying and sprints in
+bulk (3 requests each at 100 rows) instead of per race. Only pit stops require a
+round, so those are the single per-race call: about 20 requests for a season.
+
+Incident messages come from the timing provider and are **optional by design**.
+That provider returns 401 for everything — including historical data — while any
+live session is running, so the build logs the outage and emits pages without an
+incidents section rather than failing.
+
+## On the timing provider's live-session lockout
+
+Outside a race weekend the timing API is free and open. During any live session
+it returns 401 for *all* requests, historical included, unless you hold a paid
+key. Track Map and Race Replay therefore stop working from Friday practice to
+Sunday evening — roughly 60 days a year.
+
+This is broader than the documented "30 minutes either side of a session" and
+worth knowing before relying on those two views. Everything static (Title Race,
+Head to Head, Archive, Races) is unaffected.
 
 ## On hiding the data source
 
